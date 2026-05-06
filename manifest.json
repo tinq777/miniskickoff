@@ -2,7 +2,7 @@
   "name": "Mini's Kickoff Match Tracker",
   "short_name": "Mini's Kickoff",
   "description": "Track your kids soccer match",
-  "start_url": "/",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0a0f0a",
   "theme_color": "#0a0f0a",
