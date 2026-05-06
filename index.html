@@ -444,12 +444,7 @@ function SoccerTracker() {
                 },"image/png");
               });
             }}>🖼️ Share as Image</button>
-            <button className="btn bgh" style={{width:"100%",fontSize:15,padding:"11px",marginBottom:8}} onClick={handleShare}>{shareCopied?"✅ Copied!":"📤 Share as Text"}</button>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-              <div className="bf" style={{fontSize:10,color:"#4a7a4a"}}>OR COPY MANUALLY ↓</div>
-              <button className="btn bgh bsm" style={{fontSize:15}} onClick={()=>{const text=buildShareText(summarySnapshot,halfMins);const ta=document.getElementById("kf-ta");if(ta){ta.focus();ta.select();}if(navigator.clipboard)navigator.clipboard.writeText(text).then(()=>{setShareCopied(true);setTimeout(()=>setShareCopied(false),2500);}).catch(()=>{});}}>{shareCopied?"✅":"⎘"}</button>
-            </div>
-            <textarea id="kf-ta" readOnly value={buildShareText(summarySnapshot,halfMins)} onClick={e=>e.target.select()} style={{width:"100%",background:"rgba(0,0,0,0.4)",border:"1px solid #1a2a1a",borderRadius:8,color:"#aaa",fontSize:11,fontFamily:"monospace",padding:"9px",resize:"none",lineHeight:1.6,height:130}}/>
+            <button className="btn bgh" style={{width:"100%",fontSize:15,padding:"11px"}} onClick={handleShare}>{shareCopied?"✅ Copied!":"📤 Share as Text"}</button>
           </div>
           <div style={{display:"flex",gap:10}}>
             <button className="btn bg" style={{flex:1}} onClick={resetMatch}>🔄 New Match</button>
