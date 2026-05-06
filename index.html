@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Mini's Kickoff" />
+  <meta name="theme-color" content="#0a0f0a" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <title>Mini's Kickoff Match Tracker</title>
+  <style>* { box-sizing: border-box; margin: 0; padding: 0; } html,body,#root { height: 100%; background: #0a0f0a; }</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const DEFAULT_PLAYERS = [
+  { id: 1, name: "Alex", number: 1 }, { id: 2, name: "Jordan", number: 2 },
+  { id: 3, name: "Sam", number: 3 }, { id: 4, name: "Riley", number: 4 },
+  { id: 5, name: "Casey", number: 5 }, { id: 6, name: "Morgan", number: 6 },
+  { id: 7, name: "Taylor", number: 7 }, { id: 8, name: "Drew", number: 8 },
+  { id: 9, name: "Quinn", number: 9 }, { id: 10, name: "Blake", number: 10 },
+  { id: 11, name: "Avery", number: 11 },
+];
+const FIELD_SIZE = 7;
+
+function loadSaved(key, fallback) { try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : fallback; } catch { return fallback; } }
+function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
+function formatTime(s) { return `${Math.floor(s/60).toString().padStart(2,"0")}:${(s%60).toString().padStart(2,"0")}`; }
+
+function buildShareText(snap, halfMins) {
+  const date = new Date().toLocaleDateString("en-GB", { weekday:"short", day:"numeric", month:"short" });
+  const result = snap.score.us > snap.score.them ? "WIN 🏆" : snap.score.us === snap.score.them ? "DRAW 🤝" : "LOSS";
+  let txt = `⚽ MATCH REPORT — ${date}\n${result}\n\n${snap.ourTeam}  ${snap.score.us} – ${snap.score.them}  ${snap.oppTeam}\n(${halfMins} min halves)\n`;
+  if (snap.goals?.length > 0) {
+    const ours = snap.goals.filter(g=>g.team==="us"), theirs = snap.goals.filter(g=>g.team==="them");
+    if (ours.length) { txt += `\n🟢 ${snap.ourTeam} goals:\n`; ours.forEach(g=>{txt+=`  ⚽ ${g.scorerName} (H${g.half} ${g.minute}')\n`;}); }
+    if (theirs.length) { txt += `\n⚪ ${snap.oppTeam} goals:\n`; theirs.forEach(g=>{txt+=`  ⚽ ${g.scorerName} (H${g.half} ${g.minute}')\n`;}); }
+  }
+  if (snap.potmName) txt += `\n⭐ Player of the Match: ${snap.potmName}\n`;
+  txt += `\n👟 Player time on field:\n`;
+  snap.players.forEach(p=>{txt+=`  ${p.name} — ${Math.floor(p.fieldSeconds/60)} min\n`;});
+  txt += `\nTracked with ⚽ Mini's Kickoff Match Tracker`;
+  return txt;
+}
+
+function SoccerTracker() {
+  const [tab, setTab] = useState("match");
+  const [half, setHalf] = useState(1);
+  const [timeLeft, setTimeLeft] = useState(()=>loadSaved("sct_halfMins",20)*60);
+  const [running, setRunning] = useState(false);
+  const [halfDone, setHalfDone] = useState(false);
+  const [matchOver, setMatchOver] = useState(false);
+  const [score, setScore] = useState({us:0,them:0});
+  const [ourTeam, setOurTeam] = useState(()=>loadSaved("sct_ourTeam","Our Team"));
+  const [oppTeam, setOppTeam] = useState(()=>loadSaved("sct_oppTeam","Opponents"));
+  const [editingTeam, setEditingTeam] = useState(null);
+  const [halfMins, setHalfMins] = useState(()=>loadSaved("sct_halfMins",20));
+  const [subThresholdMins, setSubThresholdMins] = useState(()=>loadSaved("sct_subThreshold",2));
+  const [players, setPlayers] = useState(()=>{
+    const saved=loadSaved("sct_squad",null);
+    if(saved?.length) return saved.map(p=>({...p,onField:p.id<=FIELD_SIZE,fieldSeconds:0,benchSeconds:0,absent:false}));
+    return DEFAULT_PLAYERS.map(p=>({...p,onField:p.id<=FIELD_SIZE,fieldSeconds:0,benchSeconds:0,absent:false}));
+  });
+  const [potm,setPotm]=useState(null);
+  const [potmPhoto,setPotmPhoto]=useState(null);
+  const [goals,setGoals]=useState([]);
+  const [scorerModal,setScorerModal]=useState(null);
+  const [newPlayerName,setNewPlayerName]=useState("");
+  const [subsAlert,setSubsAlert]=useState([]);
+  const [editingPlayer,setEditingPlayer]=useState(null);
+  const [editName,setEditName]=useState("");
+  const [showScoreAnim,setShowScoreAnim]=useState(null);
+  const [showSummary,setShowSummary]=useState(false);
+  const [summarySnapshot,setSummarySnapshot]=useState(null);
+  const [shareCopied,setShareCopied]=useState(false);
+
+  const timerRef=useRef(null), lastTickRef=useRef(null);
+  const timeLeftRef=useRef(timeLeft), subThresholdRef=useRef(subThresholdMins);
+
+  useEffect(()=>{timeLeftRef.current=timeLeft;},[timeLeft]);
+  useEffect(()=>{subThresholdRef.current=subThresholdMins;},[subThresholdMins]);
+  useEffect(()=>{save("sct_squad",players.map(({id,name,number})=>({id,name,number})));},[players]);
+  useEffect(()=>{save("sct_ourTeam",ourTeam);},[ourTeam]);
+  useEffect(()=>{save("sct_oppTeam",oppTeam);},[oppTeam]);
+  useEffect(()=>{save("sct_halfMins",halfMins);},[halfMins]);
+  useEffect(()=>{save("sct_subThreshold",subThresholdMins);},[subThresholdMins]);
+
+  const totalSeconds=halfMins*60;
+
+  const checkSubs=useCallback((up)=>{
+    const onF=up.filter(p=>p.onField&&!p.absent), onB=up.filter(p=>!p.onField&&!p.absent);
+    if(!onB.length){setSubsAlert([]);return;}
+    const sugg=[],usedO=new Set(),usedI=new Set();
+    const fS=[...onF].sort((a,b)=>b.fieldSeconds-a.fieldSeconds);
+    const bS=[...onB].sort((a,b)=>a.fieldSeconds-b.fieldSeconds);
+    for(const bp of bS){for(const fp of fS){if(usedO.has(fp.id)||usedI.has(bp.id))continue;if(fp.fieldSeconds-bp.fieldSeconds>subThresholdRef.current*60){sugg.push({outId:fp.id,inId:bp.id,outName:fp.name,inName:bp.name});usedO.add(fp.id);usedI.add(bp.id);break;}}}
+    setSubsAlert(sugg.slice(0,2));
+  },[]);
+
+  useEffect(()=>{
+    if(running&&!halfDone&&!matchOver){
+      lastTickRef.current=Date.now();
+      timerRef.current=setInterval(()=>{
+        const now=Date.now(), delta=Math.round((now-lastTickRef.current)/1000);
+        lastTickRef.current=now;
+        const newT=Math.max(0,timeLeftRef.current-delta);
+        timeLeftRef.current=newT; setTimeLeft(newT);
+        if(newT<=0){clearInterval(timerRef.current);setRunning(false);setHalfDone(true);return;}
+        setPlayers(prev=>{const up=prev.map(p=>({...p,fieldSeconds:p.onField&&!p.absent?p.fieldSeconds+delta:p.fieldSeconds,benchSeconds:!p.onField&&!p.absent?p.benchSeconds+delta:p.benchSeconds}));checkSubs(up);return up;});
+      },1000);
+    }
+    return()=>clearInterval(timerRef.current);
+  },[running,halfDone,matchOver,checkSubs]);
+
+  const handleShare=async()=>{
+    if(!summarySnapshot)return;
+    const text=buildShareText(summarySnapshot,halfMins);
+    if(navigator.share){try{await navigator.share({title:"Match Report",text});}catch{}}
+    else{try{await navigator.clipboard.writeText(text);setShareCopied(true);setTimeout(()=>setShareCopied(false),2500);}catch{}}
+  };
+
+  const nextHalf=()=>{if(half===1){setHalf(2);setTimeLeft(totalSeconds);setHalfDone(false);setRunning(false);}else{setMatchOver(true);setRunning(false);setTab("potm");}};
+
+  const endAndSummarise=(cp)=>{
+    setSummarySnapshot({score:{...score},ourTeam,oppTeam,players:[...players].filter(p=>!p.absent).sort((a,b)=>b.fieldSeconds-a.fieldSeconds),potmName:players.find(p=>p.id===cp)?.name||null,potmPhoto:potmPhoto||null,goals:[...goals]});
+    setShowSummary(true);
+  };
+
+  const resetMatch=()=>{setHalf(1);setTimeLeft(totalSeconds);setRunning(false);setHalfDone(false);setMatchOver(false);setScore({us:0,them:0});setPotm(null);setPotmPhoto(null);setSubsAlert([]);setGoals([]);setShowSummary(false);setSummarySnapshot(null);setTab("match");setPlayers(prev=>prev.map((p,i)=>({...p,onField:i<FIELD_SIZE,fieldSeconds:0,benchSeconds:0})));};
+
+  const recordGoal=(team,scorerName)=>{const minute=Math.floor((totalSeconds-timeLeft)/60)+1;setGoals(prev=>[...prev,{id:Date.now(),team,scorerName,half,minute}]);setScore(s=>({...s,[team]:s[team]+1}));setShowScoreAnim(team);setTimeout(()=>setShowScoreAnim(null),700);setScorerModal(null);};
+  const removeGoal=(team)=>{setScore(s=>({...s,[team]:Math.max(0,s[team]-1)}));setGoals(prev=>{const idx=[...prev].reverse().findIndex(g=>g.team===team);if(idx===-1)return prev;return prev.filter((_,i)=>i!==prev.length-1-idx);});};
+  const toggleField=(id)=>{setPlayers(prev=>{const oc=prev.filter(p=>p.onField).length,t=prev.find(p=>p.id===id);if(t.onField&&oc<=1)return prev;return prev.map(p=>p.id===id?{...p,onField:!p.onField}:p);});};
+  const toggleAbsent=(id)=>setPlayers(prev=>prev.map(p=>p.id===id?{...p,absent:!p.absent,onField:false}:p));
+  const addPlayer=()=>{if(!newPlayerName.trim())return;const max=Math.max(...players.map(p=>p.number),0);setPlayers(prev=>[...prev,{id:Date.now(),name:newPlayerName.trim(),number:max+1,onField:false,fieldSeconds:0,benchSeconds:0,absent:false}]);setNewPlayerName("");};
+  const removePlayer=(id)=>{setPlayers(prev=>prev.filter(p=>p.id!==id));if(potm===id)setPotm(null);};
+  const saveEdit=(id)=>{setPlayers(prev=>prev.map(p=>p.id===id?{...p,name:editName}:p));setEditingPlayer(null);};
+
+  const onField=players.filter(p=>p.onField&&!p.absent).sort((a,b)=>b.fieldSeconds-a.fieldSeconds);
+  const onBench=players.filter(p=>!p.onField&&!p.absent).sort((a,b)=>a.fieldSeconds-b.fieldSeconds);
+  const absentPlayers=players.filter(p=>p.absent);
+  const sortedForPotm=[...players].filter(p=>!p.absent).sort((a,b)=>b.fieldSeconds-a.fieldSeconds);
+  const subOutIds=new Set(subsAlert.map(s=>s.outId));
+  const subInIds=new Set(subsAlert.map(s=>s.inId));
+  const timePercent=Math.round(((totalSeconds-timeLeft)/totalSeconds)*100);
+  const isUrgent=timeLeft<=60&&timeLeft>0;
+
+  return (
+    <div style={{fontFamily:"'Bebas Neue','Impact',sans-serif",background:"#0a0f0a",minHeight:"100vh",color:"#e8f5e8",maxWidth:480,margin:"0 auto",position:"relative",paddingBottom:"env(safe-area-inset-bottom)"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&display=swap');
+        .bf{font-family:'DM Sans',sans-serif}
+        .tab-btn{background:none;border:none;cursor:pointer;padding:10px 14px;font-family:'Bebas Neue',sans-serif;font-size:17px;color:#4a7a4a;letter-spacing:1px;border-bottom:2px solid transparent;transition:all 0.2s;display:inline-flex;align-items:center;gap:5px}
+        .tab-btn.active{color:#7dff7d;border-bottom-color:#7dff7d}
+        .pr{background:rgba(255,255,255,0.04);border-radius:10px;margin-bottom:8px;padding:10px 12px;display:flex;align-items:center;gap:8px;transition:background 0.2s;cursor:pointer}
+        .pr:hover{background:rgba(125,255,125,0.07)}
+        .btn{font-family:'DM Sans',sans-serif;cursor:pointer;border:none;border-radius:8px;font-size:13px;font-weight:600;padding:7px 14px;transition:all 0.15s}
+        .bg{background:#7dff7d;color:#0a0f0a}.bg:hover{background:#5edf5e}
+        .bgh{background:transparent;color:#7dff7d;border:1px solid #7dff7d}.bgh:hover{background:rgba(125,255,125,0.1)}
+        .bsm{padding:4px 9px;font-size:11px}
+        .of{border-left:3px solid #7dff7d}.ob{border-left:3px solid #4a4a4a}
+        .so{border-left:3px solid #ff6b00!important;background:rgba(255,107,0,0.08)!important;animation:pO 1.2s ease-in-out infinite}
+        .si{border-left:3px solid #00c8ff!important;background:rgba(0,200,255,0.08)!important;animation:pI 1.2s ease-in-out infinite}
+        @keyframes pO{0%,100%{box-shadow:0 0 0 0 rgba(255,107,0,0)}50%{box-shadow:0 0 0 4px rgba(255,107,0,0.35)}}
+        @keyframes pI{0%,100%{box-shadow:0 0 0 0 rgba(0,200,255,0)}50%{box-shadow:0 0 0 4px rgba(0,200,255,0.35)}}
+        .bdg{font-family:'DM Sans',sans-serif;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px}
+        .tbar{height:4px;background:#1a2a1a;border-radius:2px;overflow:hidden;margin:4px 0}
+        .tfill{height:100%;background:#7dff7d}
+        .urg{color:#ff4444!important;animation:pu 0.5s infinite alternate}
+        @keyframes pu{from{opacity:1}to{opacity:0.5}}
+        .sc{overflow-y:auto;padding-right:4px}
+        .sc::-webkit-scrollbar{width:3px}
+        .sc::-webkit-scrollbar-thumb{background:#2a4a2a;border-radius:2px}
+        .inp{font-family:'DM Sans',sans-serif;background:rgba(255,255,255,0.07);border:1px solid rgba(125,255,125,0.3);border-radius:8px;color:#e8f5e8;padding:7px 11px;font-size:13px;outline:none;width:100%}
+        .inp:focus{border-color:#7dff7d}
+        .slbl{font-size:10px;letter-spacing:2px;color:#4a7a4a;font-family:'DM Sans',sans-serif;font-weight:600;text-transform:uppercase;margin-bottom:8px}
+        .snum{font-size:60px;line-height:1}
+        .sanim{transform:scale(1.3);color:#7dff7d!important}
+        .ptch{position:absolute;top:0;left:0;right:0;bottom:0;opacity:0.03;background-image:repeating-linear-gradient(90deg,#7dff7d 0,#7dff7d 1px,transparent 0,transparent 60px);pointer-events:none}
+      `}</style>
+
+      <div className="ptch"/>
+
+      {/* Header */}
+      <div style={{padding:"16px 16px 0",textAlign:"center"}}>
+        <div className="bf" style={{fontSize:10,letterSpacing:4,color:"#4a7a4a",fontWeight:600}}>MATCH TRACKER</div>
+        <div style={{fontSize:30,letterSpacing:2,color:"#7dff7d"}}>⚽ MINI'S KICKOFF</div>
+      </div>
+
+      {/* Tabs */}
+      <div style={{display:"flex",justifyContent:"center",borderBottom:"1px solid #1a2a1a"}}>
+        {[["match",<svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="1" y="3" width="14" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2" fill="none"/><line x1="8" y1="3" x2="8" y2="13" stroke="currentColor" strokeWidth="1.2"/><circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="1.2" fill="none"/><path d="M1 5.5h2M1 10.5h2M13 5.5h2M13 10.5h2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/></svg>,"Match"],["players","👥","Squad"],["potm","⭐","POTM"]].map(([key,icon,label])=>(
+          <button key={key} className={`tab-btn ${tab===key?"active":""}`} onClick={()=>setTab(key)}><span>{icon}</span>{label}</button>
+        ))}
+      </div>
+
+      {/* MATCH TAB */}
+      {tab==="match"&&<div style={{padding:"16px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:14}}>
+          {["us","them"].map(side=>(
+            <div key={side} style={{textAlign:"center",flex:1}}>
+              {editingTeam===side?<input className="inp" defaultValue={side==="us"?ourTeam:oppTeam} autoFocus style={{textAlign:"center",fontSize:12}} onBlur={e=>{side==="us"?setOurTeam(e.target.value):setOppTeam(e.target.value);setEditingTeam(null);}}/>
+              :<div className="bf" style={{fontSize:11,color:"#aaa",cursor:"pointer"}} onClick={()=>setEditingTeam(side)}>{side==="us"?ourTeam:oppTeam} ✎</div>}
+              <div className={`snum ${showScoreAnim===side?"sanim":""}`} style={{color:"#fff"}}>{score[side]}</div>
+              <div style={{display:"flex",justifyContent:"center",gap:5}}>
+                <button className="btn bg bsm" onClick={()=>side==="us"?setScorerModal("us"):recordGoal("them",oppTeam)}>+</button>
+                <button className="btn bgh bsm" onClick={()=>removeGoal(side)}>−</button>
+              </div>
+            </div>
+          ))}
+          <div style={{fontSize:22,color:"#4a7a4a",position:"absolute"}}>VS</div>
+        </div>
+
+        <div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,padding:"16px",textAlign:"center",marginBottom:14}}>
+          <div className="bf" style={{fontSize:11,color:"#4a7a4a",letterSpacing:2,marginBottom:2}}>{matchOver?"FULL TIME":`HALF ${half} OF 2`}</div>
+          <div className={isUrgent?"urg":""} style={{fontSize:52,color:halfDone?"#ffc800":"#7dff7d",letterSpacing:2}}>{formatTime(timeLeft)}</div>
+          <div className="tbar"><div className="tfill" style={{width:`${timePercent}%`,background:isUrgent?"#ff4444":"#7dff7d",transition:"width 0.5s"}}/></div>
+          {halfDone&&<div className="bf" style={{color:"#ffc800",fontSize:12,marginBottom:6}}>⏸ Half {half} Complete!</div>}
+          {!matchOver&&<div style={{display:"flex",justifyContent:"center",gap:8,flexWrap:"wrap",marginTop:8}}>
+            {!halfDone?<>
+              <button className="btn bg" style={{minWidth:90}} onClick={()=>setRunning(r=>!r)}>{running?"⏸ Pause":"▶ Start"}</button>
+              {(running||timeLeft<totalSeconds)&&<button className="btn bgh bsm" onClick={()=>{setRunning(false);setMatchOver(true);setTab("potm");}}>🏁 End Early</button>}
+            </>:<button className="btn bg" onClick={nextHalf}>{half===1?"▶ 2nd Half":"🏁 End Match"}</button>}
+            <button className="btn bgh bsm" onClick={resetMatch}>Reset</button>
+          </div>}
+          {matchOver&&<div style={{display:"flex",gap:8,marginTop:8,justifyContent:"center"}}>
+            <button className="btn bg" onClick={()=>endAndSummarise(potm)}>📋 View Summary</button>
+            <button className="btn bgh bsm" onClick={resetMatch}>New Match</button>
+          </div>}
+        </div>
+
+        {!running&&!halfDone&&half===1&&<div style={{marginBottom:14}}>
+          <div className="bf" style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,fontSize:12,color:"#aaa",flexWrap:"wrap"}}>
+            <span>Half:</span>{[5,10,15,20,25,30].map(m=><button key={m} className={`btn bsm ${halfMins===m?"bg":"bgh"}`} onClick={()=>{setHalfMins(m);setTimeLeft(m*60);}}>{m}m</button>)}
+          </div>
+          <div className="bf" style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"#aaa",flexWrap:"wrap"}}>
+            <span>Sub alert:</span>{[1,2,3,4,5].map(m=><button key={m} className={`btn bsm ${subThresholdMins===m?"bg":"bgh"}`} onClick={()=>setSubThresholdMins(m)}>{m}m</button>)}
+          </div>
+        </div>}
+
+        {subsAlert.length>0&&(running||!halfDone)&&<div style={{background:"rgba(255,107,0,0.1)",border:"1px solid rgba(255,107,0,0.4)",borderRadius:10,padding:"10px 12px",marginBottom:10}}>
+          <div className="bf" style={{fontSize:11,color:"#ff6b00",fontWeight:700,marginBottom:5}}>🔄 SUB SUGGESTED</div>
+          {subsAlert.map((s,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+              <div className="bf" style={{flex:1,fontSize:12}}><span style={{color:"#ff6b00"}}>↓ {s.outName}</span> → <span style={{color:"#00c8ff"}}>↑ {s.inName}</span></div>
+              <button className="btn bsm" style={{background:"#ff6b00",color:"#fff"}} onClick={()=>setPlayers(prev=>prev.map(p=>p.id===s.outId?{...p,onField:false}:p.id===s.inId?{...p,onField:true}:p))}>Sub</button>
+            </div>
+          ))}
+        </div>}
+
+        <div className="slbl">On Field ({onField.length})</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:14}}>
+          {onField.map(p=><div key={p.id} className="bf" style={{background:"rgba(125,255,125,0.1)",border:"1px solid rgba(125,255,125,0.3)",borderRadius:20,padding:"3px 9px",fontSize:11,color:"#7dff7d"}}>#{p.number} {p.name} <span style={{color:"#4a7a4a"}}>{formatTime(p.fieldSeconds)}</span></div>)}
+        </div>
+
+        {goals.length>0&&<><div className="slbl">Goals</div>
+          {goals.map(g=><div key={g.id} className="bf" style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:5,color:g.team==="us"?"#7dff7d":"#aaa"}}>
+            <span>⚽</span><span style={{flex:1}}>{g.scorerName}</span><span style={{fontSize:10,color:"#4a7a4a"}}>H{g.half} {g.minute}'</span><span style={{fontSize:10}}>{g.team==="us"?ourTeam:oppTeam}</span>
+          </div>)}
+        </>}
+      </div>}
+
+      {/* SQUAD TAB */}
+      {tab==="players"&&<div style={{padding:"16px"}}>
+        <div className="bf" style={{fontSize:10,color:"#4a7a4a",marginBottom:10,textAlign:"right"}}>💾 Squad auto-saved</div>
+        <div className="slbl">On Field ({onField.length}) — tap to sub off</div>
+        <div className="sc" style={{maxHeight:"28vh"}}>
+          {onField.map(p=>{const isO=subOutIds.has(p.id);return(
+            <div key={p.id} className={`pr of ${isO?"so":""}`} onClick={()=>toggleField(p.id)}>
+              <div style={{fontSize:18}}>{isO?"🟠":"🟢"}</div>
+              <div style={{flex:1}}>
+                {editingPlayer===p.id?<div style={{display:"flex",gap:5}} onClick={e=>e.stopPropagation()}><input className="inp" value={editName} onChange={e=>setEditName(e.target.value)} style={{width:"60%"}}/><button className="btn bg bsm" onClick={()=>saveEdit(p.id)}>Save</button></div>
+                :<div className="bf" style={{fontSize:13,fontWeight:600,color:isO?"#ff6b00":"#e8f5e8"}}>#{p.number} {p.name}{isO?" ← sub off":""}</div>}
+                <div className="bf" style={{fontSize:11,color:isO?"#ff6b00":"#7dff7d"}}>⏱ {formatTime(p.fieldSeconds)}</div>
+              </div>
+              <span className="bdg" style={{background:isO?"rgba(255,107,0,0.2)":"rgba(125,255,125,0.15)",color:isO?"#ff6b00":"#7dff7d"}}>{isO?"SUB OFF":"ON"}</span>
+              <button className="btn bgh bsm" onClick={e=>{e.stopPropagation();setEditingPlayer(p.id);setEditName(p.name);}}>✎</button>
+              <button className="btn bsm" style={{background:"transparent",color:"#aaa",border:"1px solid #4a4a4a"}} onClick={e=>{e.stopPropagation();toggleAbsent(p.id);}}>🤒</button>
+              <button className="btn bsm" style={{background:"transparent",color:"#ff4444",border:"1px solid #ff4444"}} onClick={e=>{e.stopPropagation();removePlayer(p.id);}}>✕</button>
+            </div>
+          );})}
+        </div>
+
+        <div className="slbl" style={{marginTop:14}}>On Bench ({onBench.length}) — tap to bring on</div>
+        <div className="sc" style={{maxHeight:"28vh"}}>
+          {onBench.map(p=>{const isI=subInIds.has(p.id);return(
+            <div key={p.id} className={`pr ob ${isI?"si":""}`} onClick={()=>toggleField(p.id)}>
+              <div style={{fontSize:18,filter:isI?"none":"grayscale(1)"}}>{isI?"🔵":"⚽"}</div>
+              <div style={{flex:1}}>
+                {editingPlayer===p.id?<div style={{display:"flex",gap:5}} onClick={e=>e.stopPropagation()}><input className="inp" value={editName} onChange={e=>setEditName(e.target.value)} style={{width:"60%"}}/><button className="btn bg bsm" onClick={()=>saveEdit(p.id)}>Save</button></div>
+                :<div className="bf" style={{fontSize:13,color:isI?"#00c8ff":"#e8f5e8",fontWeight:isI?700:400}}>#{p.number} {p.name}{isI?" ← sub on":""}</div>}
+                <div className="bf" style={{fontSize:11,color:isI?"#00c8ff":"#aaa"}}>⏱ {formatTime(p.fieldSeconds)} | bench: {formatTime(p.benchSeconds)}</div>
+              </div>
+              <span className="bdg" style={{background:isI?"rgba(0,200,255,0.15)":"rgba(255,255,255,0.08)",color:isI?"#00c8ff":"#aaa"}}>{isI?"SUB ON":"BENCH"}</span>
+              <button className="btn bgh bsm" onClick={e=>{e.stopPropagation();setEditingPlayer(p.id);setEditName(p.name);}}>✎</button>
+              <button className="btn bsm" style={{background:"transparent",color:"#aaa",border:"1px solid #4a4a4a"}} onClick={e=>{e.stopPropagation();toggleAbsent(p.id);}}>🤒</button>
+              <button className="btn bsm" style={{background:"transparent",color:"#ff4444",border:"1px solid #ff4444"}} onClick={e=>{e.stopPropagation();removePlayer(p.id);}}>✕</button>
+            </div>
+          );})}
+        </div>
+
+        {absentPlayers.length>0&&<div style={{marginTop:14}}>
+          <div className="slbl">Absent / Sick ({absentPlayers.length})</div>
+          {absentPlayers.map(p=>(
+            <div key={p.id} className="pr" style={{opacity:0.5,borderLeft:"3px solid #ff4444"}}>
+              <div style={{fontSize:18}}>🤒</div>
+              <div style={{flex:1}}><div className="bf" style={{fontSize:13,color:"#aaa"}}>#{p.number} {p.name}</div><div className="bf" style={{fontSize:11,color:"#ff4444"}}>Not playing today</div></div>
+              <button className="btn bgh bsm" onClick={()=>toggleAbsent(p.id)}>Restore</button>
+              <button className="btn bsm" style={{background:"transparent",color:"#ff4444",border:"1px solid #ff4444"}} onClick={()=>removePlayer(p.id)}>✕</button>
+            </div>
+          ))}
+        </div>}
+
+        <div style={{marginTop:14,display:"flex",gap:8}}>
+          <input className="inp" placeholder="Add player name..." value={newPlayerName} onChange={e=>setNewPlayerName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addPlayer()}/>
+          <button className="btn bg" onClick={addPlayer}>Add</button>
+        </div>
+      </div>}
+
+      {/* POTM TAB */}
+      {tab==="potm"&&<div style={{padding:"16px"}}>
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <div style={{fontSize:40}}>⭐</div>
+          <div style={{fontSize:24,color:"#ffc800"}}>Player of the Match</div>
+          {potm&&<div className="bf" style={{fontSize:12,color:"#aaa",marginTop:6}}>Selected: <strong style={{color:"#ffc800"}}>{players.find(p=>p.id===potm)?.name}</strong></div>}
+        </div>
+        <div className="sc" style={{maxHeight:"38vh"}}>
+          {sortedForPotm.map(p=>(
+            <div key={p.id} className="pr" style={{border:potm===p.id?"1px solid #ffc800":"1px solid transparent",background:potm===p.id?"rgba(255,200,0,0.08)":"rgba(255,255,255,0.04)"}} onClick={()=>setPotm(p.id)}>
+              <div style={{fontSize:20}}>{potm===p.id?"⭐":"○"}</div>
+              <div style={{flex:1}}><div className="bf" style={{fontSize:14,fontWeight:600,color:potm===p.id?"#ffc800":"#e8f5e8"}}>#{p.number} {p.name}</div><div className="bf" style={{fontSize:11,color:"#aaa"}}>⏱ {formatTime(p.fieldSeconds)}</div></div>
+              {potm===p.id&&<span className="bdg" style={{background:"rgba(255,200,0,0.2)",color:"#ffc800"}}>🏆 POTM</span>}
+            </div>
+          ))}
+        </div>
+        {potm&&<div style={{marginTop:14,background:"rgba(255,200,0,0.08)",border:"1px solid rgba(255,200,0,0.3)",borderRadius:12,padding:14,textAlign:"center"}}>
+          <div style={{fontSize:32}}>🏆</div>
+          <div className="bf" style={{color:"#ffc800",fontSize:15,fontWeight:700}}>{players.find(p=>p.id===potm)?.name} wins Player of the Match!</div>
+          <div className="bf" style={{fontSize:12,color:"#aaa",marginTop:3}}>{ourTeam} {score.us} – {score.them} {oppTeam}</div>
+          {potmPhoto?<div style={{marginTop:10}}>
+            <img src={potmPhoto} alt="POTM" style={{width:110,height:110,borderRadius:"50%",objectFit:"cover",border:"3px solid #ffc800",display:"block",margin:"0 auto"}}/>
+            <button className="btn bgh bsm" style={{marginTop:6}} onClick={()=>setPotmPhoto(null)}>✕ Remove</button>
+          </div>:<div style={{marginTop:10}}>
+            <label style={{cursor:"pointer",display:"inline-block"}}>
+              <div className="btn bgh" style={{fontSize:12}}>📷 Add Photo</div>
+              <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>setPotmPhoto(ev.target.result);r.readAsDataURL(f);}}/>
+            </label>
+            <div className="bf" style={{fontSize:10,color:"#4a7a4a",marginTop:3}}>📱 Camera or photo library</div>
+          </div>}
+          <button className="btn bg" style={{marginTop:10}} onClick={()=>endAndSummarise(potm)}>📋 View Match Summary</button>
+        </div>}
+      </div>}
+
+      {/* SCORER MODAL */}
+      {scorerModal&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:90,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+        <div style={{background:"#111a11",borderRadius:"18px 18px 0 0",padding:"20px 16px",maxHeight:"75vh",display:"flex",flexDirection:"column"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <div>
+              <div style={{fontSize:20,color:"#7dff7d"}}>⚽ WHO SCORED?</div>
+              <div className="bf" style={{fontSize:11,color:"#4a7a4a"}}>{ourTeam} · H{half} {Math.floor((totalSeconds-timeLeft)/60)+1}'</div>
+            </div>
+            <button className="btn bgh bsm" onClick={()=>setScorerModal(null)}>✕</button>
+          </div>
+          <div style={{overflowY:"auto",flex:1}}>
+            {players.filter(p=>p.onField&&!p.absent).map(p=>(
+              <div key={p.id} className="pr" onClick={()=>recordGoal("us",`#${p.number} ${p.name}`)}>
+                <div style={{fontSize:16}}>🟢</div>
+                <div className="bf" style={{flex:1,fontSize:14,fontWeight:600}}>#{p.number} {p.name}</div>
+              </div>
+            ))}
+            <div className="pr" style={{borderLeft:"3px solid #4a4a4a"}} onClick={()=>recordGoal("us","Own Goal (Opp)")}>
+              <div style={{fontSize:16}}>🙈</div><div className="bf" style={{flex:1,fontSize:13}}>Own Goal (Opponent)</div>
+            </div>
+          </div>
+        </div>
+      </div>}
+
+      {/* MATCH SUMMARY */}
+      {showSummary&&summarySnapshot&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.95)",zIndex:100,overflowY:"auto",padding:"20px 16px"}}>
+        <div style={{maxWidth:480,margin:"0 auto"}}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <div className="bf" style={{fontSize:10,letterSpacing:4,color:"#4a7a4a",fontWeight:600}}>FULL TIME</div>
+            <div style={{fontSize:34,color:"#7dff7d",letterSpacing:2}}>MATCH SUMMARY</div>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,padding:"16px",textAlign:"center",marginBottom:14}}>
+            <div className="bf" style={{fontSize:11,color:"#4a7a4a",letterSpacing:2,marginBottom:8}}>FINAL SCORE</div>
+            <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:20}}>
+              <div><div className="bf" style={{fontSize:12,color:"#aaa"}}>{summarySnapshot.ourTeam}</div><div style={{fontSize:50,color:"#7dff7d"}}>{summarySnapshot.score.us}</div></div>
+              <div style={{fontSize:22,color:"#4a7a4a"}}>—</div>
+              <div><div className="bf" style={{fontSize:12,color:"#aaa"}}>{summarySnapshot.oppTeam}</div><div style={{fontSize:50,color:"#fff"}}>{summarySnapshot.score.them}</div></div>
+            </div>
+          </div>
+          {summarySnapshot.potmName&&<div style={{background:"rgba(255,200,0,0.08)",border:"1px solid rgba(255,200,0,0.3)",borderRadius:14,padding:"14px",textAlign:"center",marginBottom:14}}>
+            {summarySnapshot.potmPhoto?<img src={summarySnapshot.potmPhoto} alt="POTM" style={{width:90,height:90,borderRadius:"50%",objectFit:"cover",border:"3px solid #ffc800",display:"block",margin:"0 auto 8px"}}/>:<div style={{fontSize:28}}>⭐</div>}
+            <div className="bf" style={{color:"#ffc800",fontSize:15,fontWeight:700}}>{summarySnapshot.potmName}</div>
+            <div className="bf" style={{fontSize:15,color:"#ffc800",fontWeight:700}}>Player of the Match</div>
+          </div>}
+          {summarySnapshot.goals?.length>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,padding:"14px",marginBottom:14}}>
+            <div className="slbl">Goals</div>
+            {summarySnapshot.goals.map(g=><div key={g.id} className="bf" style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:7}}>
+              <span>⚽</span><span style={{flex:1,color:g.team==="us"?"#7dff7d":"#e8f5e8"}}>{g.scorerName}</span>
+              <span style={{fontSize:10,color:"#4a7a4a"}}>H{g.half} {g.minute}'</span>
+              <span style={{fontSize:10,color:g.team==="us"?"#4a7a4a":"#aaa"}}>{g.team==="us"?summarySnapshot.ourTeam:summarySnapshot.oppTeam}</span>
+            </div>)}
+          </div>}
+          <div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,padding:"14px",marginBottom:14}}>
+            <div className="slbl">Player Field Time</div>
+            {summarySnapshot.players.map(p=>{const pct=Math.round((p.fieldSeconds/(halfMins*2*60))*100);return(
+              <div key={p.id} style={{marginBottom:9}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                  <span className="bf" style={{fontSize:12,color:"#e8f5e8"}}>#{p.number} {p.name} {summarySnapshot.potmName===p.name?"⭐":""}</span>
+                  <span className="bf" style={{fontSize:12,color:"#aaa"}}>{formatTime(p.fieldSeconds)}</span>
+                </div>
+                <div className="tbar"><div className="tfill" style={{width:`${Math.min(pct,100)}%`}}/></div>
+              </div>
+            );})}
+          </div>
+          <div style={{background:"rgba(125,255,125,0.05)",border:"1px solid rgba(125,255,125,0.2)",borderRadius:14,padding:"14px",marginBottom:14}}>
+            <div className="slbl">Share with Parents</div>
+            <button className="btn bg" style={{width:"100%",fontSize:15,padding:"11px",marginBottom:8}} onClick={handleShare}>{shareCopied?"✅ Copied!":"📤 Share Match Report"}</button>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+              <div className="bf" style={{fontSize:10,color:"#4a7a4a"}}>OR COPY MANUALLY ↓</div>
+              <button className="btn bgh bsm" style={{fontSize:15}} onClick={()=>{const text=buildShareText(summarySnapshot,halfMins);const ta=document.getElementById("kf-ta");if(ta){ta.focus();ta.select();}if(navigator.clipboard)navigator.clipboard.writeText(text).then(()=>{setShareCopied(true);setTimeout(()=>setShareCopied(false),2500);}).catch(()=>{});}}>{shareCopied?"✅":"⎘"}</button>
+            </div>
+            <textarea id="kf-ta" readOnly value={buildShareText(summarySnapshot,halfMins)} onClick={e=>e.target.select()} style={{width:"100%",background:"rgba(0,0,0,0.4)",border:"1px solid #1a2a1a",borderRadius:8,color:"#aaa",fontSize:11,fontFamily:"monospace",padding:"9px",resize:"none",lineHeight:1.6,height:160}}/>
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <button className="btn bg" style={{flex:1}} onClick={resetMatch}>🔄 New Match</button>
+            <button className="btn bgh" style={{flex:1}} onClick={()=>setShowSummary(false)}>← Back</button>
+          </div>
+        </div>
+      </div>}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(SoccerTracker));
+  </script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("sw.js"));
+    }
+  </script>
+</body>
+</html>
