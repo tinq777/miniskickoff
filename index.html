@@ -383,7 +383,7 @@ function SoccerTracker() {
       </div>}
 
       {/* MATCH SUMMARY */}
-      {showSummary&&summarySnapshot&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.95)",zIndex:100,overflowY:"auto",padding:"20px 16px"}}>
+      {showSummary&&summarySnapshot&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.95)",zIndex:100,overflowY:"auto",padding:"calc(env(safe-area-inset-top) + 20px) 16px 20px"}}>
         <div style={{maxWidth:480,margin:"0 auto"}}>
           <div style={{textAlign:"center",marginBottom:20}}>
             <div className="bf" style={{fontSize:10,letterSpacing:4,color:"#4a7a4a",fontWeight:600}}>FULL TIME</div>
