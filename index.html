@@ -501,34 +501,67 @@ function SoccerTracker() {
             <div style={{fontSize:11,color:"#ffc800",opacity:0.8,letterSpacing:3}}>PLAYER OF THE MATCH</div>
           </div>}
 
-          {/* Goals */}
+          {/* Goals - two column layout */}
           {summarySnapshot.goals?.length>0&&<div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"18px 20px",marginBottom:16,border:"1px solid rgba(255,255,255,0.07)"}}>
             <div style={{fontSize:11,letterSpacing:3,color:"#4a7a4a",fontWeight:700,marginBottom:14}}>GOALS</div>
-            {summarySnapshot.goals.map((g,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:12,fontSize:14,marginBottom:12,paddingBottom:12,borderBottom:i<summarySnapshot.goals.length-1?"1px solid rgba(255,255,255,0.06)":"none"}}>
-              <span style={{fontSize:18}}>⚽</span>
-              <span style={{flex:1,color:g.team==="us"?"#7dff7d":"#e8f5e8",fontWeight:600}}>{g.scorerName}</span>
-              <span style={{fontSize:12,color:"#4a7a4a",background:"rgba(255,255,255,0.07)",padding:"3px 10px",borderRadius:10,fontWeight:600}}>H{g.half} {g.minute}'</span>
-            </div>)}
+            <div style={{display:"flex",gap:12}}>
+              {/* Our team goals */}
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,color:"#7dff7d",fontWeight:700,letterSpacing:1,marginBottom:8,paddingBottom:6,borderBottom:"1px solid rgba(125,255,125,0.2)"}}>{summarySnapshot.ourTeam.toUpperCase()}</div>
+                {summarySnapshot.goals.filter(g=>g.team==="us").length===0
+                  ?<div style={{fontSize:11,color:"#4a7a4a",fontStyle:"italic"}}>—</div>
+                  :summarySnapshot.goals.filter(g=>g.team==="us").map((g,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:7}}>
+                      <span style={{fontSize:12}}>⚽</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:12,color:"#e8f5e8",fontWeight:600,lineHeight:1.2}}>{g.scorerName}</div>
+                        <div style={{fontSize:10,color:"#4a7a4a"}}>H{g.half} {g.minute}'</div>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+              {/* Divider */}
+              <div style={{width:1,background:"rgba(255,255,255,0.08)"}}/>
+              {/* Opponent goals */}
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,color:"#aaa",fontWeight:700,letterSpacing:1,marginBottom:8,paddingBottom:6,borderBottom:"1px solid rgba(255,255,255,0.1)"}}>{summarySnapshot.oppTeam.toUpperCase()}</div>
+                {summarySnapshot.goals.filter(g=>g.team==="them").length===0
+                  ?<div style={{fontSize:11,color:"#4a7a4a",fontStyle:"italic"}}>—</div>
+                  :summarySnapshot.goals.filter(g=>g.team==="them").map((g,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:7}}>
+                      <span style={{fontSize:12}}>⚽</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:12,color:"#e8f5e8",fontWeight:600,lineHeight:1.2}}>{g.scorerName}</div>
+                        <div style={{fontSize:10,color:"#4a7a4a"}}>H{g.half} {g.minute}'</div>
+                      </div>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
           </div>}
 
-          {/* Player times */}
+          {/* Player times - compact */}
           <div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"18px 20px",marginBottom:24,border:"1px solid rgba(255,255,255,0.07)"}}>
-            <div style={{fontSize:11,letterSpacing:3,color:"#4a7a4a",fontWeight:700,marginBottom:16}}>PLAYER FIELD TIME</div>
-            {summarySnapshot.players.map((p,i)=>{
-              const maxSecs=Math.max(...summarySnapshot.players.map(x=>x.fieldSeconds),1);
-              const pct=Math.round((p.fieldSeconds/maxSecs)*100);
-              return(
-                <div key={i} style={{marginBottom:14}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                    <span style={{fontSize:14,color:"#e8f5e8",fontWeight:500}}>{p.name}{summarySnapshot.potmName===p.name?" ⭐":""}</span>
-                    <span style={{fontSize:14,color:"#7dff7d",fontWeight:700}}>{formatTime(p.fieldSeconds)}</span>
+            <div style={{fontSize:11,letterSpacing:3,color:"#4a7a4a",fontWeight:700,marginBottom:14}}>PLAYER FIELD TIME</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:"0 16px"}}>
+              {summarySnapshot.players.map((p,i)=>{
+                const maxSecs=Math.max(...summarySnapshot.players.map(x=>x.fieldSeconds),1);
+                const pct=Math.round((p.fieldSeconds/maxSecs)*100);
+                return(
+                  <div key={i} style={{width:"calc(50% - 8px)",marginBottom:10}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                      <span style={{fontSize:12,color:"#e8f5e8",fontWeight:500}}>{p.name}{summarySnapshot.potmName===p.name?" ⭐":""}</span>
+                      <span style={{fontSize:12,color:"#7dff7d",fontWeight:700}}>{formatTime(p.fieldSeconds)}</span>
+                    </div>
+                    <div style={{height:4,background:"rgba(255,255,255,0.07)",borderRadius:3}}>
+                      <div style={{height:"100%",width:`${pct}%`,background:"linear-gradient(90deg,#3a6a3a,#7dff7d)",borderRadius:3}}/>
+                    </div>
                   </div>
-                  <div style={{height:6,background:"rgba(255,255,255,0.07)",borderRadius:3}}>
-                    <div style={{height:"100%",width:`${pct}%`,background:"linear-gradient(90deg,#3a6a3a,#7dff7d)",borderRadius:3}}/>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
 
           {/* Footer */}
