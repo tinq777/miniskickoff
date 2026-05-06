@@ -385,7 +385,7 @@ function SoccerTracker() {
 
       {/* MATCH SUMMARY */}
       {showSummary&&summarySnapshot&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.95)",zIndex:100,overflowY:"auto",padding:"calc(env(safe-area-inset-top) + 20px) 16px 20px"}}>
-        <div id="kf-summary-card" style={{maxWidth:480,margin:"0 auto",background:"#0a0f0a",borderRadius:16,padding:"16px"}}>
+        <div style={{maxWidth:480,margin:"0 auto"}}>
           <div style={{textAlign:"center",marginBottom:20}}>
             <div className="bf" style={{fontSize:10,letterSpacing:4,color:"#4a7a4a",fontWeight:600}}>FULL TIME</div>
             <div style={{fontSize:34,color:"#7dff7d",letterSpacing:2}}>MATCH SUMMARY</div>
@@ -399,7 +399,7 @@ function SoccerTracker() {
             </div>
           </div>
           {summarySnapshot.potmName&&<div style={{background:"rgba(255,200,0,0.08)",border:"1px solid rgba(255,200,0,0.3)",borderRadius:14,padding:"14px",textAlign:"center",marginBottom:14}}>
-            {summarySnapshot.potmPhoto?<img src={summarySnapshot.potmPhoto} alt="POTM" style={{width:90,height:90,borderRadius:"50%",objectFit:"cover",border:"3px solid #ffc800",display:"block",margin:"0 auto 8px"}}/>:<div style={{fontSize:28}}>⭐</div>}
+            {summarySnapshot.potmPhoto?<img src={summarySnapshot.potmPhoto} alt="POTM" style={{width:90,height:90,borderRadius:"50%",objectFit:"cover",border:"3px solid #ffc800",display:"block",margin:"0 auto 8px"}} crossOrigin="anonymous"/>:<div style={{fontSize:28}}>⭐</div>}
             <div className="bf" style={{color:"#ffc800",fontSize:15,fontWeight:700}}>{summarySnapshot.potmName}</div>
             <div className="bf" style={{fontSize:15,color:"#ffc800",fontWeight:700}}>Player of the Match</div>
           </div>}
@@ -423,36 +423,89 @@ function SoccerTracker() {
               </div>
             );})}
           </div>
+
+          {/* Share buttons */}
           <div style={{background:"rgba(125,255,125,0.05)",border:"1px solid rgba(125,255,125,0.2)",borderRadius:14,padding:"14px",marginBottom:14}}>
             <div className="slbl">Share with Parents</div>
-            <button className="btn bg" style={{width:"100%",fontSize:15,padding:"11px",marginBottom:8}} onClick={handleShare}>{shareCopied?"✅ Copied!":"📤 Share as Text"}</button>
-            <button className="btn bgh" style={{width:"100%",fontSize:15,padding:"11px",marginBottom:8}} onClick={()=>{
-              const el = document.getElementById("kf-summary-card");
-              if(!el) return;
-              window.html2canvas(el, {backgroundColor:"#0a0f0a", scale:2, useCORS:true, allowTaint:true}).then(canvas=>{
+            <button className="btn bg" style={{width:"100%",fontSize:15,padding:"11px",marginBottom:8}} onClick={()=>{
+              const el = document.getElementById("kf-image-card");
+              if(!el||!window.html2canvas) return;
+              window.html2canvas(el,{backgroundColor:"#0a0f0a",scale:3,useCORS:true,allowTaint:true,logging:false}).then(canvas=>{
                 canvas.toBlob(blob=>{
-                  if(navigator.share && navigator.canShare && navigator.canShare({files:[new File([blob],"match-summary.png",{type:"image/png"})]})){
-                    navigator.share({files:[new File([blob],"match-summary.png",{type:"image/png"})], title:"Match Summary"});
+                  const file = new File([blob],"match-summary.png",{type:"image/png"});
+                  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+                    navigator.share({files:[file],title:"Match Summary"});
                   } else {
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url; a.download = "match-summary.png"; a.click();
+                    const url=URL.createObjectURL(blob);
+                    const a=document.createElement("a");
+                    a.href=url;a.download="match-summary.png";a.click();
                     URL.revokeObjectURL(url);
                   }
                 },"image/png");
               });
             }}>🖼️ Share as Image</button>
+            <button className="btn bgh" style={{width:"100%",fontSize:15,padding:"11px",marginBottom:8}} onClick={handleShare}>{shareCopied?"✅ Copied!":"📤 Share as Text"}</button>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
               <div className="bf" style={{fontSize:10,color:"#4a7a4a"}}>OR COPY MANUALLY ↓</div>
               <button className="btn bgh bsm" style={{fontSize:15}} onClick={()=>{const text=buildShareText(summarySnapshot,halfMins);const ta=document.getElementById("kf-ta");if(ta){ta.focus();ta.select();}if(navigator.clipboard)navigator.clipboard.writeText(text).then(()=>{setShareCopied(true);setTimeout(()=>setShareCopied(false),2500);}).catch(()=>{});}}>{shareCopied?"✅":"⎘"}</button>
             </div>
-            <textarea id="kf-ta" readOnly value={buildShareText(summarySnapshot,halfMins)} onClick={e=>e.target.select()} style={{width:"100%",background:"rgba(0,0,0,0.4)",border:"1px solid #1a2a1a",borderRadius:8,color:"#aaa",fontSize:11,fontFamily:"monospace",padding:"9px",resize:"none",lineHeight:1.6,height:160}}/>
+            <textarea id="kf-ta" readOnly value={buildShareText(summarySnapshot,halfMins)} onClick={e=>e.target.select()} style={{width:"100%",background:"rgba(0,0,0,0.4)",border:"1px solid #1a2a1a",borderRadius:8,color:"#aaa",fontSize:11,fontFamily:"monospace",padding:"9px",resize:"none",lineHeight:1.6,height:130}}/>
           </div>
           <div style={{display:"flex",gap:10}}>
             <button className="btn bg" style={{flex:1}} onClick={resetMatch}>🔄 New Match</button>
             <button className="btn bgh" style={{flex:1}} onClick={()=>setShowSummary(false)}>← Back</button>
           </div>
         </div>
+      </div>}
+
+      {/* HIDDEN CLEAN IMAGE CARD — captured by html2canvas */}
+      {showSummary&&summarySnapshot&&<div id="kf-image-card" style={{position:"fixed",left:"-9999px",top:0,width:400,background:"#0a0f0a",padding:"28px 24px",fontFamily:"'DM Sans',sans-serif"}}>
+        {/* Header */}
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:11,letterSpacing:4,color:"#4a7a4a",fontWeight:600,marginBottom:4}}>⚽ MINI'S KICKOFF</div>
+          <div style={{fontSize:11,color:"#4a7a4a",letterSpacing:2}}>MATCH REPORT</div>
+        </div>
+        {/* Score */}
+        <div style={{background:"rgba(255,255,255,0.06)",borderRadius:14,padding:"20px",textAlign:"center",marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:24}}>
+            <div><div style={{fontSize:12,color:"#aaa",marginBottom:4}}>{summarySnapshot.ourTeam}</div><div style={{fontSize:52,color:"#7dff7d",fontFamily:"'Bebas Neue',sans-serif"}}>{summarySnapshot.score.us}</div></div>
+            <div style={{fontSize:20,color:"#4a7a4a"}}>—</div>
+            <div><div style={{fontSize:12,color:"#aaa",marginBottom:4}}>{summarySnapshot.oppTeam}</div><div style={{fontSize:52,color:"#fff",fontFamily:"'Bebas Neue',sans-serif"}}>{summarySnapshot.score.them}</div></div>
+          </div>
+          <div style={{fontSize:11,color:"#4a7a4a",marginTop:8,letterSpacing:1}}>{summarySnapshot.score.us>summarySnapshot.score.them?"WIN 🏆":summarySnapshot.score.us===summarySnapshot.score.them?"DRAW 🤝":"LOSS"}</div>
+        </div>
+        {/* POTM */}
+        {summarySnapshot.potmName&&<div style={{background:"rgba(255,200,0,0.08)",border:"1px solid rgba(255,200,0,0.25)",borderRadius:14,padding:"16px",textAlign:"center",marginBottom:14}}>
+          {summarySnapshot.potmPhoto&&<img src={summarySnapshot.potmPhoto} alt="POTM" style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",border:"3px solid #ffc800",display:"block",margin:"0 auto 8px"}} crossOrigin="anonymous"/>}
+          {!summarySnapshot.potmPhoto&&<div style={{fontSize:24,marginBottom:4}}>⭐</div>}
+          <div style={{color:"#ffc800",fontSize:14,fontWeight:700}}>{summarySnapshot.potmName}</div>
+          <div style={{fontSize:11,color:"#ffc800",marginTop:2}}>Player of the Match</div>
+        </div>}
+        {/* Goals */}
+        {summarySnapshot.goals?.length>0&&<div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,padding:"14px",marginBottom:14}}>
+          <div style={{fontSize:10,letterSpacing:2,color:"#4a7a4a",fontWeight:600,marginBottom:10}}>GOALS</div>
+          {summarySnapshot.goals.map((g,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:6}}>
+            <span>⚽</span><span style={{flex:1,color:g.team==="us"?"#7dff7d":"#e8f5e8"}}>{g.scorerName}</span>
+            <span style={{fontSize:10,color:"#4a7a4a"}}>H{g.half} {g.minute}'</span>
+          </div>)}
+        </div>}
+        {/* Player times */}
+        <div style={{background:"rgba(255,255,255,0.04)",borderRadius:14,padding:"14px",marginBottom:16}}>
+          <div style={{fontSize:10,letterSpacing:2,color:"#4a7a4a",fontWeight:600,marginBottom:10}}>PLAYER FIELD TIME</div>
+          {summarySnapshot.players.map((p,i)=>{const pct=Math.round((p.fieldSeconds/(halfMins*2*60))*100);return(
+            <div key={i} style={{marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                <span style={{fontSize:12,color:"#e8f5e8"}}>{p.name} {summarySnapshot.potmName===p.name?"⭐":""}</span>
+                <span style={{fontSize:12,color:"#aaa"}}>{formatTime(p.fieldSeconds)}</span>
+              </div>
+              <div style={{height:3,background:"#1a2a1a",borderRadius:2}}>
+                <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:"#7dff7d",borderRadius:2}}/>
+              </div>
+            </div>
+          );})}
+        </div>
+        {/* Footer */}
+        <div style={{textAlign:"center",fontSize:10,color:"#4a7a4a",letterSpacing:1}}>⚽ Mini's Kickoff Match Tracker</div>
       </div>}
     </div>
   );
