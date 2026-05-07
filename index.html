@@ -48,10 +48,10 @@ function buildShareText(snap, halfMins) {
   if (snap.potmName) txt += `\n⭐ Player of the Match: ${snap.potmName}\n`;
   txt += `\n👟 Player time on field:\n`;
   snap.players.forEach(p=>{txt+=`  ${p.name} — ${Math.floor(p.fieldSeconds/60)} min\n`;});
-  txt += `\nTracked with ⚽ Mini's Kickoff Match Tracker`;
   if (snap.absentPlayers?.length > 0) {
     txt += `\n\n🤒 Absent: ${snap.absentPlayers.map(p=>p.name).join(", ")}`;
   }
+  txt += `\nTracked with ⚽ Mini's Kickoff Match Tracker`;
   return txt;
 }
 
@@ -68,6 +68,7 @@ function SoccerTracker() {
   const [editingTeam, setEditingTeam] = useState(null);
   const [halfMins, setHalfMins] = useState(()=>loadSaved("sct_halfMins",20));
   const [subThresholdMins, setSubThresholdMins] = useState(()=>loadSaved("sct_subThreshold",2));
+  const [subAlertsEnabled, setSubAlertsEnabled] = useState(()=>loadSaved("sct_subAlerts",true));
   const [players, setPlayers] = useState(()=>{
     const saved=loadSaved("sct_squad",null);
     if(saved?.length) return saved.map(p=>({...p,onField:p.id<=FIELD_SIZE,fieldSeconds:0,benchSeconds:0,absent:false}));
@@ -106,6 +107,7 @@ function SoccerTracker() {
   useEffect(()=>{save("sct_oppTeam",oppTeam);},[oppTeam]);
   useEffect(()=>{save("sct_halfMins",halfMins);},[halfMins]);
   useEffect(()=>{save("sct_subThreshold",subThresholdMins);},[subThresholdMins]);
+  useEffect(()=>{save("sct_subAlerts",subAlertsEnabled);},[subAlertsEnabled]);
 
   const totalSeconds=halfMins*60;
 
@@ -222,8 +224,8 @@ function SoccerTracker() {
   const onBench=players.filter(p=>!p.onField&&!p.absent).sort((a,b)=>a.fieldSeconds-b.fieldSeconds);
   const absentPlayers=players.filter(p=>p.absent);
   const sortedForPotm=[...players].filter(p=>!p.absent).sort((a,b)=>b.fieldSeconds-a.fieldSeconds);
-  const subOutIds=new Set(subsAlert.map(s=>s.outId));
-  const subInIds=new Set(subsAlert.map(s=>s.inId));
+  const subOutIds=new Set(subAlertsEnabled?subsAlert.map(s=>s.outId):[]);
+  const subInIds=new Set(subAlertsEnabled?subsAlert.map(s=>s.inId):[]);
   const timePercent=Math.round(((totalSeconds-timeLeft)/totalSeconds)*100);
   const isUrgent=timeLeft<=60&&timeLeft>0;
 
@@ -333,12 +335,20 @@ function SoccerTracker() {
           <div className="bf" style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,fontSize:12,color:"#aaa",flexWrap:"wrap"}}>
             <span>Half:</span>{[5,10,15,20,25,30].map(m=><button key={m} className={`btn bsm ${halfMins===m?"bg":"bgh"}`} onClick={()=>{setHalfMins(m);setTimeLeft(m*60);}}>{m}m</button>)}
           </div>
-          <div className="bf" style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:"#aaa",flexWrap:"wrap"}}>
-            <span>Sub alert:</span>{[1,2,3,4,5].map(m=><button key={m} className={`btn bsm ${subThresholdMins===m?"bg":"bgh"}`} onClick={()=>setSubThresholdMins(m)}>{m}m</button>)}
+          <div className="bf" style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:12,color:"#aaa",flexWrap:"wrap"}}>
+            <span>Sub alert:</span>
+            {subAlertsEnabled&&[1,2,3,4,5].map(m=><button key={m} className={`btn bsm ${subThresholdMins===m?"bg":"bgh"}`} onClick={()=>setSubThresholdMins(m)}>{m}m</button>)}
+            {/* Toggle switch */}
+            <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:11,color:subAlertsEnabled?"#7dff7d":"#555"}}>{subAlertsEnabled?"On":"Off"}</span>
+              <div onClick={()=>setSubAlertsEnabled(v=>!v)} style={{width:44,height:24,borderRadius:12,background:subAlertsEnabled?"rgba(125,255,125,0.3)":"rgba(255,255,255,0.08)",border:`1px solid ${subAlertsEnabled?"#7dff7d":"#333"}`,cursor:"pointer",position:"relative",transition:"all 0.3s"}}>
+                <div style={{position:"absolute",top:2,left:subAlertsEnabled?22:2,width:18,height:18,borderRadius:"50%",background:subAlertsEnabled?"#7dff7d":"#555",transition:"left 0.3s",boxShadow:"0 1px 3px rgba(0,0,0,0.4)"}}/>
+              </div>
+            </div>
           </div>
         </div>}
 
-        {subsAlert.length>0&&(running||!halfDone)&&<div className={subAlertFlashing?"sub-flash":""} style={{background:"rgba(255,107,0,0.1)",border:"1px solid rgba(255,107,0,0.4)",borderRadius:10,padding:"10px 12px",marginBottom:10}}>
+        {subAlertsEnabled&&subsAlert.length>0&&(running||!halfDone)&&<div className={subAlertFlashing?"sub-flash":""} style={{background:"rgba(255,107,0,0.1)",border:"1px solid rgba(255,107,0,0.4)",borderRadius:10,padding:"10px 12px",marginBottom:10}}>
           <div className="bf" style={{fontSize:11,color:"#ff6b00",fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ff6b00" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
             SUB SUGGESTED
@@ -675,6 +685,16 @@ function SoccerTracker() {
               })}
             </div>
           </div>
+          {summarySnapshot.absentPlayers?.length>0&&<div style={{background:"rgba(255,255,255,0.05)",borderRadius:16,padding:"14px 20px",marginBottom:24,border:"1px solid rgba(255,255,255,0.07)"}}>
+            <div style={{fontSize:11,letterSpacing:3,color:"#4a7a4a",fontWeight:700,marginBottom:10}}>ABSENT / SICK</div>
+            {summarySnapshot.absentPlayers.map((p,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,marginBottom:6}}>
+                <span>🤒</span>
+                <span style={{color:"#e8f5e8",fontWeight:500}}>{p.name}</span>
+                <span style={{color:"#ff4444",fontSize:11}}>— Did not play</span>
+              </div>
+            ))}
+          </div>}
           <div style={{textAlign:"center",paddingTop:12,borderTop:"1px solid #1a2a1a"}}>
             <div style={{fontSize:11,color:"#4a7a4a",letterSpacing:2}}>⚽ MINI'S KICKOFF MATCH TRACKER</div>
           </div>
