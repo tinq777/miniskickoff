@@ -89,6 +89,28 @@ function SoccerTracker() {
   const [pendingSubIds,setPendingSubIds]=useState(new Set());
   const [subAlertFlashing, setSubAlertFlashing] = useState(false);
   const subAlertTimerRef = useRef(null);
+  const swipeTabs = ["match","players","potm"];
+  const touchStartX = useRef(null);
+  const touchStartY = useRef(null);
+
+  const handleTouchStart = (e) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e) => {
+    if(touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    // Only trigger if horizontal swipe is dominant and long enough
+    if(Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+      const currentIndex = swipeTabs.indexOf(tab);
+      if(dx < 0 && currentIndex < swipeTabs.length - 1) setTab(swipeTabs[currentIndex + 1]);
+      if(dx > 0 && currentIndex > 0) setTab(swipeTabs[currentIndex - 1]);
+    }
+    touchStartX.current = null;
+    touchStartY.current = null;
+  };
 
   useEffect(()=>{
     if(!window.html2canvas){
@@ -264,7 +286,7 @@ function SoccerTracker() {
   `;
 
   return (
-    <div style={{fontFamily:"'Bebas Neue','Impact',sans-serif",background:"#0a0f0a",minHeight:"100vh",color:"#e8f5e8",maxWidth:480,margin:"0 auto",position:"relative",paddingBottom:"env(safe-area-inset-bottom)"}}>
+    <div style={{fontFamily:"'Bebas Neue','Impact',sans-serif",background:"#0a0f0a",minHeight:"100vh",color:"#e8f5e8",maxWidth:480,margin:"0 auto",position:"relative",paddingBottom:"env(safe-area-inset-bottom)"}} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
       <style>{css}</style>
       <div className="ptch"/>
 
@@ -333,7 +355,7 @@ function SoccerTracker() {
 
         {!running&&!halfDone&&half===1&&!matchOver&&<div style={{marginBottom:14}}>
           <div className="bf" style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,fontSize:12,color:"#aaa",flexWrap:"wrap"}}>
-            <span>Half:</span>{[5,10,15,20,25,30].map(m=><button key={m} className={`btn bsm ${halfMins===m?"bg":"bgh"}`} onClick={()=>{setHalfMins(m);setTimeLeft(m*60);}}>{m}m</button>)}
+            <span>Half:</span>{[5,10,15,20,25,30,45].map(m=><button key={m} className={`btn bsm ${halfMins===m?"bg":"bgh"}`} onClick={()=>{setHalfMins(m);setTimeLeft(m*60);}}>{m}m</button>)}
           </div>
           <div className="bf" style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:12,color:"#aaa",flexWrap:"wrap"}}>
             <span>Sub alert:</span>
