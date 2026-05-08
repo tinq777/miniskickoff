@@ -70,6 +70,8 @@ function SoccerTracker() {
   const [subThresholdMins, setSubThresholdMins] = useState(()=>loadSaved("sct_subThreshold",2));
   const [subAlertsEnabled, setSubAlertsEnabled] = useState(()=>loadSaved("sct_subAlerts",true));
   const [randomLineup, setRandomLineup] = useState(()=>loadSaved("sct_randomLineup",false));
+  const randomLineupRef = useRef(randomLineup);
+  useEffect(()=>{ randomLineupRef.current = randomLineup; },[randomLineup]);
   const [players, setPlayers] = useState(()=>{
     const saved=loadSaved("sct_squad",null);
     if(saved?.length) return saved.map(p=>({...p,onField:p.id<=FIELD_SIZE,fieldSeconds:0,benchSeconds:0,absent:false}));
@@ -215,7 +217,7 @@ function SoccerTracker() {
     setPlayers(prev=>{
       const available = prev.filter(p=>!p.absent);
       const fieldCount = prev.filter(p=>p.onField&&!p.absent).length || FIELD_SIZE;
-      if(randomLineup && available.length > 0){
+      if(randomLineupRef.current && available.length > 0){
         // Fisher-Yates shuffle
         const shuffled = [...available];
         for(let i=shuffled.length-1;i>0;i--){
