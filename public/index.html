@@ -216,9 +216,13 @@ function SoccerTracker() {
     setSubsAlert([]);setGoals([]);setShowSummary(false);setSummarySnapshot(null);setTab("match");
     setPlayers(prev=>{
       const available = prev.filter(p=>!p.absent);
-      const fieldCount = prev.filter(p=>p.onField&&!p.absent).length || FIELD_SIZE;
+      // Use the number of non-absent players that were on field before the match started
+      // Fall back to FIELD_SIZE if we can't determine
+      const fieldCount = Math.min(
+        prev.filter(p=>p.onField&&!p.absent).length || FIELD_SIZE,
+        available.length
+      );
       if(randomLineupRef.current && available.length > 0){
-        // Fisher-Yates shuffle
         const shuffled = [...available];
         for(let i=shuffled.length-1;i>0;i--){
           const j=Math.floor(Math.random()*(i+1));
@@ -227,7 +231,7 @@ function SoccerTracker() {
         const onFieldIds = new Set(shuffled.slice(0,fieldCount).map(p=>p.id));
         return prev.map(p=>({...p,onField:p.absent?false:onFieldIds.has(p.id),fieldSeconds:0,benchSeconds:0}));
       }
-      return prev.map((p,i)=>({...p,onField:i<fieldCount,fieldSeconds:0,benchSeconds:0}));
+      return prev.map((p,i)=>({...p,onField:!p.absent&&i<fieldCount,fieldSeconds:0,benchSeconds:0}));
     });
   };
 
