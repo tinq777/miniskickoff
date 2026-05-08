@@ -69,6 +69,9 @@ function SoccerTracker() {
   const [halfMins, setHalfMins] = useState(()=>loadSaved("sct_halfMins",20));
   const [subThresholdMins, setSubThresholdMins] = useState(()=>loadSaved("sct_subThreshold",2));
   const [subAlertsEnabled, setSubAlertsEnabled] = useState(()=>loadSaved("sct_subAlerts",true));
+  const [randomLineup, setRandomLineup] = useState(()=>loadSaved("sct_randomLineup",false));
+  const randomLineupRef = useRef(randomLineup);
+  useEffect(()=>{ randomLineupRef.current = randomLineup; },[randomLineup]);
   const [players, setPlayers] = useState(()=>{
     const saved=loadSaved("sct_squad",null);
     if(saved?.length) return saved.map(p=>({...p,onField:p.id<=FIELD_SIZE,fieldSeconds:0,benchSeconds:0,absent:false}));
@@ -130,6 +133,7 @@ function SoccerTracker() {
   useEffect(()=>{save("sct_halfMins",halfMins);},[halfMins]);
   useEffect(()=>{save("sct_subThreshold",subThresholdMins);},[subThresholdMins]);
   useEffect(()=>{save("sct_subAlerts",subAlertsEnabled);},[subAlertsEnabled]);
+  useEffect(()=>{save("sct_randomLineup",randomLineup);},[randomLineup]);
 
   const totalSeconds=halfMins*60;
 
@@ -210,7 +214,21 @@ function SoccerTracker() {
     setHalf(1);setTimeLeft(totalSeconds);setRunning(false);setHalfDone(false);
     setMatchOver(false);setScore({us:0,them:0});setPotm(null);setPotmPhoto(null);
     setSubsAlert([]);setGoals([]);setShowSummary(false);setSummarySnapshot(null);setTab("match");
-    setPlayers(prev=>prev.map((p,i)=>({...p,onField:i<FIELD_SIZE,fieldSeconds:0,benchSeconds:0})));
+    setPlayers(prev=>{
+      const available = prev.filter(p=>!p.absent);
+      const fieldCount = prev.filter(p=>p.onField&&!p.absent).length || FIELD_SIZE;
+      if(randomLineupRef.current && available.length > 0){
+        // Fisher-Yates shuffle
+        const shuffled = [...available];
+        for(let i=shuffled.length-1;i>0;i--){
+          const j=Math.floor(Math.random()*(i+1));
+          [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];
+        }
+        const onFieldIds = new Set(shuffled.slice(0,fieldCount).map(p=>p.id));
+        return prev.map(p=>({...p,onField:p.absent?false:onFieldIds.has(p.id),fieldSeconds:0,benchSeconds:0}));
+      }
+      return prev.map((p,i)=>({...p,onField:i<fieldCount,fieldSeconds:0,benchSeconds:0}));
+    });
   };
 
   const recordGoal=(team,scorerName)=>{
@@ -357,10 +375,18 @@ function SoccerTracker() {
           <div className="bf" style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,fontSize:12,color:"#aaa",flexWrap:"wrap"}}>
             <span>Half:</span>{[5,10,15,20,25,30,45].map(m=><button key={m} className={`btn bsm ${halfMins===m?"bg":"bgh"}`} onClick={()=>{setHalfMins(m);setTimeLeft(m*60);}}>{m}m</button>)}
           </div>
-          <div className="bf" style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:12,color:"#aaa",flexWrap:"wrap"}}>
+          <div className="bf" style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#aaa",flexWrap:"wrap"}}>
+            <span>Random lineup:</span>
+            <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+              <span style={{fontSize:11,color:randomLineup?"#7dff7d":"#555"}}>{randomLineup?"On":"Off"}</span>
+              <div onClick={()=>setRandomLineup(v=>!v)} style={{width:44,height:24,borderRadius:12,background:randomLineup?"rgba(125,255,125,0.3)":"rgba(255,255,255,0.08)",border:`1px solid ${randomLineup?"#7dff7d":"#333"}`,cursor:"pointer",position:"relative",transition:"all 0.3s"}}>
+                <div style={{position:"absolute",top:2,left:randomLineup?22:2,width:18,height:18,borderRadius:"50%",background:randomLineup?"#7dff7d":"#555",transition:"left 0.3s",boxShadow:"0 1px 3px rgba(0,0,0,0.4)"}}/>
+              </div>
+            </div>
+          </div>
+          <div className="bf" style={{display:"flex",alignItems:"center",gap:8,fontSize:12,color:"#aaa",flexWrap:"wrap",marginTop:8}}>
             <span>Sub alert:</span>
             {subAlertsEnabled&&[1,2,3,4,5].map(m=><button key={m} className={`btn bsm ${subThresholdMins===m?"bg":"bgh"}`} onClick={()=>setSubThresholdMins(m)}>{m}m</button>)}
-            {/* Toggle switch */}
             <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:11,color:subAlertsEnabled?"#7dff7d":"#555"}}>{subAlertsEnabled?"On":"Off"}</span>
               <div onClick={()=>setSubAlertsEnabled(v=>!v)} style={{width:44,height:24,borderRadius:12,background:subAlertsEnabled?"rgba(125,255,125,0.3)":"rgba(255,255,255,0.08)",border:`1px solid ${subAlertsEnabled?"#7dff7d":"#333"}`,cursor:"pointer",position:"relative",transition:"all 0.3s"}}>
